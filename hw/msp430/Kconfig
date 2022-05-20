@@ -1,0 +1,22 @@
+config MSP430
+    bool
+    select MSP430_SVS
+    select MSP430_GPIO
+    select MSP430_FLASH
+    select MSP430_WATCHDOG
+    select MSP430_GPIO
+
+config MSP430_SVS
+    bool
+
+config MSP430_GPIO
+    bool
+
+config MSP430_FLASH
+    bool
+
+config MSP430_WATCHDOG
+    bool
+
+config MSP430_GPIO
+    bool

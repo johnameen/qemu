@@ -2,42 +2,7 @@
 #include "hw/sysbus.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
-
-#define TYPE_MSP430_SVS "msp430_svs"
-#define MSP430_SVS_WORDSIZE (1)
-#define MSP430_SVS(obj) OBJECT_CHECK(msp430_svs_device, (obj), TYPE_MSP430_SVS)
-
-typedef enum
-{
-    VLD_OFF   = 0x000,
-    VLD_19V   = 0x190,
-    VLD_21V   = 0x210,
-    VLD_22V   = 0x220,
-    VLD_23V   = 0x230,
-    VLD_24V   = 0x240,
-    VLD_25V   = 0x250,
-    VLD_265V  = 0x265,
-    VLD_28V   = 0x280,
-    VLD_29V   = 0x290,
-    VLD_305V  = 0x305,
-    VLD_32V   = 0x320,
-    VLD_335V  = 0x335,
-    VLD_35V   = 0x350,
-    VLD_37V   = 0x370,
-    VLD_COMP  = 0xFFF,
-} VLDValue;
-
-typedef struct 
-{
-    // Public Fields
-    SysBusDevice parent_obj;
-
-    // Private Fields
-    MemoryRegion region;
-    uint8_t SVSCTL;
-    VLDValue    vldx;
-    bool        poron;
-} msp430_svs_device;
+#include "hw/misc/msp430_svs.h"
 
 /*******************************************************************
  * Prototypes
@@ -108,8 +73,10 @@ static void msp430_svs_reset(DeviceState *dev)
  * Family 1 device.
  * @return If initialization was successful or not (0 for success)
  */
-static int msp430_svs_init(SysBusDevice *dev)
+static void msp430_svs_init(Object *obj)
 {
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+
     msp430_svs_device *device = MSP430_SVS(dev);
     memory_region_init_io(&device->region, OBJECT(dev),  &mmio_ops,
                           dev, "flash-cfg", 0x1);
@@ -118,8 +85,6 @@ static int msp430_svs_init(SysBusDevice *dev)
     /* Reset the Device so we are able to have an initial state
      * for this device. */
     msp430_svs_reset(DEVICE(dev));
-
-    return 0;
 }
 
 /*******************************************************************
@@ -135,8 +100,6 @@ static int msp430_svs_init(SysBusDevice *dev)
 static void msp430_svs_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
-    sdc->init = msp430_svs_init;
     dc->reset = msp430_svs_reset;
 }
 
@@ -150,6 +113,7 @@ static const TypeInfo msp430_svs_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(msp430_svs_device),
     .class_init    = msp430_svs_class_init,
+    .instance_init = msp430_svs_init
 };
 
 /**

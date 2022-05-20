@@ -77,7 +77,7 @@ static void msp430f1x_init(MachineState *args)
 
     // Create SRAM Region
     sram = g_new(MemoryRegion, 1);
-    memory_region_init_ram(sram, NULL, "msp430.sram", MSP430_SRAM_SIZE, NULL);
+    memory_region_init_ram_nomigrate(sram, NULL, "msp430.sram", MSP430_SRAM_SIZE, NULL);
     memory_region_add_subregion(get_system_memory(), MSP430_SRAM_BASE, sram);
     vmstate_register_ram_global(sram);
 

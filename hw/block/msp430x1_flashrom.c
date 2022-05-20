@@ -2,10 +2,11 @@
 #include "hw/sysbus.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
 
 #define TYPE_MSP430X1_FLASHROM "msp430x1_flashrom"
-#define MSP430X1_FLASHROM(obj) OBJECT_CHECK(MSP430FlashRomState, (obj), TYPE_MSP430X1_FLASHROM)
+OBJECT_DECLARE_SIMPLE_TYPE(MSP430FlashRomState, MSP430X1_FLASHROM)
 
 #define MSP430X1_FLASHROM_CONFIG_BASE  (0x0128)
 #define MSP430X1_FLASHROM_CONFIG_WORDSIZE (3)
@@ -41,7 +42,7 @@ typedef enum
 
 } flash_write_mode;
 
-typedef struct 
+struct MSP430FlashRomState
 {
     // Public Fields
     SysBusDevice parent_obj;
@@ -67,8 +68,7 @@ typedef struct
     flash_erase_mode eraseMode;
     uint8_t fssel;
     uint8_t fn;
-
-} MSP430FlashRomState;
+};
 
 /*******************************************************************
  * Prototypes
@@ -249,6 +249,7 @@ static void flashrom_config_write(void* opaque, hwaddr offset,
 
         case FCTL2:
             flashrom_handle_fctl2(device, val);
+            break;
 
         case FCTL3:
             flashrom_handle_fctl3(device, val);
@@ -270,13 +271,18 @@ static void msp430_register_memory(MspMemory *memory,
                                    const MemoryRegionOps *ops,
                                    int n)
 {
-    memory_region_init_rom_device(&memory->region, OBJECT(s), 
+
+    memory_region_init_rom_device_nomigrate(&memory->region, OBJECT(s), 
                                   ops, s,
                                   memory->name,
                                   memory->size, 
                                   NULL);
+    
     vmstate_register_ram(&memory->region, DEVICE(s));
+
+    memory_region_set_readonly(&memory->region, true);  // Meenmachine TODO: Is this needed?
     memory->ptr = memory_region_get_ram_ptr(&memory->region);
+
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &memory->region);
     sysbus_mmio_map(SYS_BUS_DEVICE(s), n, memory->base);
 }
@@ -308,8 +314,9 @@ static void msp430x1_flashrom_reset(DeviceState *dev)
  * Family 1 device.
  * @return If initialization was successful or not (0 for success)
  */
-static int msp430x1_flashrom_init(SysBusDevice *dev)
+static void msp430x1_flashrom_init(Object *obj)
 {
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
     // Cast the SysBusDevice to be a bcm2835_gpio_t
     // device. This also checks to ensure this is the right
     // object that is being used.
@@ -338,10 +345,6 @@ static int msp430x1_flashrom_init(SysBusDevice *dev)
     s->info.name = "info";
     s->info.segment_size = 128;
     msp430_register_memory(&s->info, s, &info_ops, 2);
-
-
-
-    return 0;
 }
 
 /*******************************************************************
@@ -369,10 +372,7 @@ static int msp430x1_flashrom_init(SysBusDevice *dev)
 static void msp430x1_flashrom_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
-    sdc->init = msp430x1_flashrom_init;
     dc->reset = msp430x1_flashrom_reset;
-    //dc->props = msp430_flashrom_props;
 }
 
 /**
@@ -386,6 +386,7 @@ static const TypeInfo msp430_flashrom_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(MSP430FlashRomState),
     .class_init    = msp430x1_flashrom_class_init,
+    .instance_init = msp430x1_flashrom_init
 };
 
 /**

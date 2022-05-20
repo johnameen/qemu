@@ -45,5 +45,5 @@ config VHOST_USER_BLK
 config SWIM
     bool
 
-config MSP430
+config MSP430_FLASH
     bool

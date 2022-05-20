@@ -13,4 +13,4 @@ softmmu_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_gpio.c'))
 softmmu_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files('aspeed_gpio.c'))
 softmmu_ss.add(when: 'CONFIG_SIFIVE_GPIO', if_true: files('sifive_gpio.c'))
 
-softmmu_ss.add(when: 'CONFIG_MSP430', if_true: files('msp430_gpio.c'))
+softmmu_ss.add(when: 'CONFIG_MSP430_GPIO', if_true: files('msp430_gpio.c'))

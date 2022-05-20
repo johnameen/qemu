@@ -174,7 +174,7 @@ config VIRT_CTRL
 config LASI
     bool
 
-config MSP430
+config MSP430_SVS
     bool
 
 source macio/Kconfig

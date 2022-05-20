@@ -4,8 +4,9 @@
 #include "exec/address-spaces.h"
 
 #define TYPE_MSP430_GPIO "msp430_gpio"
+OBJECT_DECLARE_SIMPLE_TYPE(msp430_gpio_device, MSP430_GPIO)
+
 #define MSP430_GPIO_SIZE 32
-#define MSP430_GPIO(obj) OBJECT_CHECK(msp430_gpio_device, (obj), TYPE_MSP430_GPIO)
 
 typedef enum
 {
@@ -60,7 +61,7 @@ typedef struct
     qemu_irq pin[8];
 } gpio_port;
 
-typedef struct 
+struct msp430_gpio_device
 {
     // Public Fields
     SysBusDevice parent_obj;
@@ -73,7 +74,7 @@ typedef struct
     gpio_port p2;
     gpio_port p5;
     gpio_port p6;
-} msp430_gpio_device;
+};
 
 /*******************************************************************
  * Prototypes
@@ -381,8 +382,10 @@ static void msp430_gpio_reset(DeviceState *dev)
  * @param dev SysBusDevice that will be initialized as a MSP430 device.
  * @return If initialization was successful or not (0 for success)
  */
-static int msp430_gpio_init(SysBusDevice *dev)
+static void msp430_gpio_init(Object *obj)
 {
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+
     msp430_gpio_device *device = MSP430_GPIO(dev);
     memory_region_init_io(&device->region, OBJECT(dev),  &mmio_ops,
                           dev, "gpio", MSP430_GPIO_SIZE);
@@ -394,7 +397,6 @@ static int msp430_gpio_init(SysBusDevice *dev)
     /* Reset the Device so we are able to have an initial state
      * for this device. */
     msp430_gpio_reset(DEVICE(dev));
-    return 0;
 }
 
 /*******************************************************************
@@ -411,8 +413,6 @@ static int msp430_gpio_init(SysBusDevice *dev)
 static void msp430_gpio_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
-    sdc->init = msp430_gpio_init;
     dc->reset = msp430_gpio_reset;
 }
 
@@ -425,6 +425,7 @@ static const TypeInfo msp430_gpio_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(msp430_gpio_device),
     .class_init    = msp430_gpio_class_init,
+    .instance_init = msp430_gpio_init
 };
 
 /**

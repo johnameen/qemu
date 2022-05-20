@@ -4,10 +4,11 @@
 #include "exec/address-spaces.h"
 
 #define TYPE_MSP430_WATCHDOG "msp430_watchdog"
-#define MSP430_WATCHDOG_WORDSIZE (1)
-#define MSP430_WATCHDOG(obj) OBJECT_CHECK(msp430_watchdog_device, (obj), TYPE_MSP430_WATCHDOG)
+OBJECT_DECLARE_SIMPLE_TYPE(msp430_watchdog_device, MSP430_WATCHDOG)
 
-typedef struct 
+#define MSP430_WATCHDOG_WORDSIZE (1)
+
+struct msp430_watchdog_device
 {
     // Public Fields
     SysBusDevice parent_obj;
@@ -19,7 +20,7 @@ typedef struct
     uint8_t wdtssel;
     uint8_t wdtisx;
     qemu_irq pucRequest;
-} msp430_watchdog_device;
+};
 
 /*******************************************************************
  * Prototypes
@@ -44,7 +45,7 @@ static void handle_wdtctrl(msp430_watchdog_device *device, uint16_t value)
 {
     // Check for the writing key before replacing the value with the 
     // read key value.
-    if ((value & 0xFF00) != 0x5A)
+    if (((value & 0xFF00) >> 8) != 0x5A)
         return;
     value &= 0x00F7;
 
@@ -123,8 +124,10 @@ static void handle_irq_reset(void *opaque, int irq, int req)
  * @param dev SysBusDevice that will be initialized as a MSP430 device.
  * @return If initialization was successful or not (0 for success)
  */
-static int msp430_watchdog_init(SysBusDevice *dev)
+static void msp430_watchdog_init(Object *obj)
 {
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+    
     msp430_watchdog_device *device = MSP430_WATCHDOG(dev);
     memory_region_init_io(&device->region, OBJECT(dev),  &mmio_ops,
                           dev, "watchdog", 0x1);
@@ -135,8 +138,6 @@ static int msp430_watchdog_init(SysBusDevice *dev)
     /* Reset the Device so we are able to have an initial state
      * for this device. */
     msp430_watchdog_reset(DEVICE(dev));
-
-    return 0;
 }
 
 /*******************************************************************
@@ -153,8 +154,6 @@ static int msp430_watchdog_init(SysBusDevice *dev)
 static void msp430_watchdog_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
-    sdc->init = msp430_watchdog_init;
     dc->reset = msp430_watchdog_reset;
 }
 
@@ -167,6 +166,7 @@ static const TypeInfo msp430_watchdog_info = {
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(msp430_watchdog_device),
     .class_init    = msp430_watchdog_class_init,
+    .instance_init = msp430_watchdog_init
 };
 
 /**
