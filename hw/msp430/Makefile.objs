@@ -1,0 +1,3 @@
+obj-$(CONFIG_MSP430) += msp430f5x.o
+obj-$(CONFIG_MSP430) += msp430f1x.o
+
