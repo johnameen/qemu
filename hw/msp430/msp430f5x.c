@@ -2,6 +2,7 @@
 #include "cpu.h"
 #include "hw/hw.h"
 #include "hw/boards.h"
+#include "migration/vmstate.h"
 #include "sysemu/sysemu.h"
 #include "exec/address-spaces.h"
 #include "hw/loader.h"

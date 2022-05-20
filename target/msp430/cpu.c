@@ -2,11 +2,15 @@
  * TODO: Insert Copyright and Attribution Here
  */
 #include "cpu.h"
-#include "qemu-common.h"
+#include "exec/exec-all.h"
+// #include "qemu-common.h"
 #include "exec/cpu_ldst.h"
 #include "exec/log.h"
 #include "qapi/error.h"
 #include "hw/loader.h"
+
+// TODO: Is this okay?
+#include "translate.h"
 
 #define MSP430_NUM_CPUS              (sizeof(MspCpus)/sizeof(MSP430CpuInfo))
 
@@ -31,19 +35,20 @@ static void msp430_init(Object *obj);
  * 
  * @param s [description]
  */
-static void msp430_cpu_reset(CPUState *s)
+static void msp430_cpu_reset(DeviceState *dev)
 {
+    CPUState *s = CPU(dev);
     MSP430Cpu *cpu = MSP430_CPU(s);
     MSP430Class *msp430_class = MSP430_CPU_GET_CLASS(cpu);
-    MSP430CpuState *state = &cpu->state;
+    MSP430CpuState *state = &cpu->env;
     
-    msp430_class->parent_reset(s);
+    msp430_class->parent_reset(dev);
     memset(state, 0, sizeof(MSP430CpuState));
     
-    uint8_t *rom = rom_ptr(0xFFFE);
+    uint8_t *rom = rom_ptr(0xFFFE, 2);
     uint32_t resetAddr = (0xFFFE & ldl_p(rom));
     state->regs[MSP430_PC_REGISTER] = resetAddr;
-    tlb_flush(s, 1);
+    tlb_flush(s);
 }
 
 static void msp430_cpu_debug_excp_handler(CPUState *s) { log_cpu_state(s, 0); }
@@ -60,7 +65,7 @@ static void msp430_cpu_debug_excp_handler(CPUState *s) { log_cpu_state(s, 0); }
 static void msp430_set_pc(CPUState *cs, vaddr value)
 {
     MSP430Cpu *cpu = MSP430_CPU(cs);
-    cpu->state.PC_REG = (0xFFFF & value);
+    cpu->env.PC_REG = (0xFFFF & value);
 }
 
 /**
@@ -74,7 +79,12 @@ static void msp430_set_pc(CPUState *cs, vaddr value)
  */
 MSP430Cpu *cpu_msp430_init(const char *cpu_model)
 {
-    MSP430Cpu *cpu = MSP430_CPU(cpu_generic_init(TYPE_MSP430_CPU, cpu_model));
+    ObjectClass *oc = cpu_class_by_name(TYPE_MSP430_CPU, cpu_model);
+    if (!oc){
+        return NULL;
+    }
+    //    MSP430Cpu *cpu = MSP430_CPU(msp430_class_by_name(cpu_model));
+    MSP430Cpu *cpu = MSP430_CPU(oc);
     cpu_reset(CPU(cpu));
     return cpu;
 }
@@ -112,25 +122,13 @@ static ObjectClass *msp430_class_by_name(const char *cpu_model)
  */
 static void msp430_init(Object *obj)
 {
-
-    MSP430Cpu *msp_state = MSP430_CPU(obj);
-    CPUState *cpu_state = CPU(obj);
-    static int inited;
+    MSP430Cpu *cpu = MSP430_CPU(obj);
+    // CPUState *cpu_state = CPU(obj);
     
     /* Fetch the proper states and initialize the CPU and the parent
      * CPU object to be initialized. */
-    cpu_state->env_ptr = &msp_state->state;
-    cpu_exec_init(cpu_state, &error_abort);
+    cpu_set_cpustate_pointers(cpu);
 
-    /* Check to see if the TCG is enabled within QEMU and if we have not
-     * initialized the Translator engine. */
-    if (tcg_enabled() && !inited) {
-        msp430_translate_init();
-        inited = 1;
-    }
-
-    // We are done initializing this object. Return to the caller to continue
-    // with execution.
     return;
 }
 
@@ -139,25 +137,6 @@ static void msp430_cpu_realize(DeviceState *dev, Error **errp){
     MSP430Class *msp430_class = MSP430_CPU_GET_CLASS(dev);
     qemu_init_vcpu(cs);
     msp430_class->parent_realize(dev, errp);
-}
-
-
-static void msp430_cpu_class_init(ObjectClass *oc, void *data)
-{
-    MSP430Class *msp_class = MSP430_CPU_CLASS(oc);
-    CPUClass *cpu_class = CPU_CLASS(oc);
-    DeviceClass *dev_class =  DEVICE_CLASS(oc);
-
-    msp_class->parent_realize = dev_class->realize;
-    dev_class->realize = msp430_cpu_realize;
-    msp_class->parent_reset = cpu_class->reset;
-    cpu_class->reset = msp430_cpu_reset;
-
-    cpu_class->class_by_name = msp430_class_by_name;
-    cpu_class->set_pc = msp430_set_pc;
-    cpu_class->dump_state = msp430_cpu_dump_state;
-    cpu_class->debug_excp_handler = msp430_cpu_debug_excp_handler;
-    return;
 }
 
 static void cpu_register(const MSP430CpuInfo *info)
@@ -173,6 +152,52 @@ static void cpu_register(const MSP430CpuInfo *info)
     type_info.name = g_strdup_printf("%s-" TYPE_MSP430_CPU, info->name);
     type_register(&type_info);
     g_free((void *)type_info.name);
+}
+
+
+// static void msp430_cpu_synchronize_from_tb(CPUState *cs,
+//                                            const TranslationBlock *tb)
+// {
+//     MSP430Cpu *cpu = MSP430_CPU(cs);
+
+//     cpu->env.PC_REG = tb->pc;
+// }
+
+#ifdef CONFIG_TCG
+#include "hw/core/tcg-cpu-ops.h"
+
+static const struct TCGCPUOps msp430_tcg_ops = {
+    .initialize = msp430_tcg_init,
+    // .synchronize_from_tb = msp430_cpu_synchronize_from_tb,
+    .debug_excp_handler = msp430_cpu_debug_excp_handler,
+
+#ifndef CONFIG_USER_ONLY
+    .tlb_fill = msp430_tlb_fill,
+    // .cpu_exec_interrupt = msp430_cpu_exec_interrupt,
+    // .do_interrupt = msp430_cpu_do_interrupt,
+    // .do_transaction_failed = msp430_cpu_do_transaction_failed,
+    // .do_unaligned_access = msp430_cpu_do_unaligned_access,
+#endif /* !CONFIG_USER_ONLY */
+};
+#endif /* CONFIG_TCG */
+
+static void msp430_cpu_class_init(ObjectClass *oc, void *data)
+{
+    MSP430Class *mc = MSP430_CPU_CLASS(oc);
+    CPUClass *cc = CPU_CLASS(oc);
+    DeviceClass *dc =  DEVICE_CLASS(oc);
+
+    device_class_set_parent_realize(dc, msp430_cpu_realize, &mc->parent_realize);
+    // device_class_set_props(dc, msp430_cpu_properties);
+    device_class_set_parent_reset(dc, msp430_cpu_reset, &mc->parent_reset);
+
+    cc->class_by_name = msp430_class_by_name;
+    cc->set_pc = msp430_set_pc;
+    cc->dump_state = msp430_cpu_dump_state;
+
+    cc->tcg_ops = &msp430_tcg_ops;
+
+    return;
 }
 
 static const TypeInfo msp430_cpu_type_info = {

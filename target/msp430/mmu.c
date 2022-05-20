@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "exec/exec-all.h"
 
 int msp430_cpu_handle_mmu_fault(CPUState *cs, vaddr address,
                                int rw, int mmu_idx);
@@ -19,18 +20,24 @@ int msp430_cpu_handle_mmu_fault(CPUState *cs, vaddr address,
 /* Try to fill the TLB and return an exception if error. If retaddr is
    NULL, it means that the function was called in C code (i.e. not
    from generated code or from helper.c) */
-void tlb_fill(CPUState *cs, 
-              target_ulong addr, 
-              MMUAccessType access_type, 
-              int mmu_idx,
-              uintptr_t retaddr)
+bool msp430_tlb_fill(CPUState *cs, 
+                    vaddr addr,
+                    int size,
+                    MMUAccessType access_type, 
+                    int mmu_idx,
+                    bool probe,
+                    uintptr_t retaddr)
 {
+    // MSP430Cpu *cpu = MSP430_CPU(cs);
+
     int ret;
 
     ret = msp430_cpu_handle_mmu_fault(cs, addr, access_type, mmu_idx);
     if (unlikely(ret)) {
         if (retaddr) {
-            cpu_restore_state(cs, retaddr);
+            return cpu_restore_state(cs, retaddr, true);
         }
     }
+
+    return !!ret;
 }

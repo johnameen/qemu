@@ -566,6 +566,8 @@ elif check_define __arm__ ; then
   cpu="arm"
 elif check_define __aarch64__ ; then
   cpu="aarch64"
+elif check_define __msp430__; then
+  cpu="msp430"
 elif check_define __loongarch64 ; then
   cpu="loongarch64"
 else
@@ -612,6 +614,9 @@ case "$cpu" in
     CPU_CFLAGS="-m32 -mv8plus -mcpu=ultrasparc" ;;
   sparc64)
     CPU_CFLAGS="-m64 -mcpu=ultrasparc" ;;
+  
+  msp430)
+    cpu="msp430" ;;
 esac
 
 : ${make=${MAKE-make}}

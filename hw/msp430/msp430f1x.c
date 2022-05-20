@@ -6,7 +6,11 @@
 #include "sysemu/sysemu.h"
 #include "exec/address-spaces.h"
 #include "hw/loader.h"
+#include "migration/vmstate.h"
 #include "qemu/log.h"
+#include "qapi/error.h"
+
+#define TYPE_MSP430X1_FLASHROM "msp430x1_flashrom"
 
 #define MSP430_FLASH_SIZE (0x400)     // 1kB Flash
 #define MSP430_FLASH_BASE (0xFC00)    // Base Address
@@ -59,11 +63,17 @@ static void msp430f1x_init(MachineState *args)
     MemoryRegion *sram;
     DeviceState *flashrom;
     DeviceState *svs;
+    SysBusDevice *s;
+
 
     // Create Flash/Info and Flash Controller
-    flashrom = qdev_create(NULL, "msp430x1_flashrom");
-    qdev_init_nofail(flashrom);
-    sysbus_mmio_map(SYS_BUS_DEVICE(flashrom), 0, 0x0128);
+    // flashrom = qdev_create(NULL, "msp430x1_flashrom");
+    flashrom = qdev_new(TYPE_MSP430X1_FLASHROM);
+
+    // qdev_init_nofail(flashrom);
+    s = SYS_BUS_DEVICE(flashrom);
+    sysbus_realize_and_unref(s, &error_fatal);
+    sysbus_mmio_map(s, 0, 0x0128);
 
     // Create SRAM Region
     sram = g_new(MemoryRegion, 1);
@@ -77,9 +87,11 @@ static void msp430f1x_init(MachineState *args)
     {
         fprintf(stdout, "Initializing periphs %s @ %08x\n", 
                 periphs[i].deviceName, periphs[i].deviceBaseAddr);
-        svs = qdev_create(NULL, periphs[i].deviceName);
-        qdev_init_nofail(svs);
-        sysbus_mmio_map(SYS_BUS_DEVICE(svs), 0, periphs[i].deviceBaseAddr);
+        svs = qdev_new(periphs[i].deviceName);
+        s = SYS_BUS_DEVICE(svs);
+        // svs = qdev_create(NULL, periphs[i].deviceName);
+        // qdev_init_nofail(svs);
+        sysbus_mmio_map(s, 0, periphs[i].deviceBaseAddr);
     }
 
     // Attempt to boot the MSP430 with the kernel file. This will allow

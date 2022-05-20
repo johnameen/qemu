@@ -33,6 +33,7 @@
 #pragma GCC poison TARGET_SPARC64
 #pragma GCC poison TARGET_TRICORE
 #pragma GCC poison TARGET_XTENSA
+#pragma GCC poison TARGET_MSP430
 
 #pragma GCC poison TARGET_ALIGNED_ONLY
 #pragma GCC poison TARGET_HAS_BFLT
@@ -82,6 +83,7 @@
 #pragma GCC poison CONFIG_SH4_DIS
 #pragma GCC poison CONFIG_SPARC_DIS
 #pragma GCC poison CONFIG_XTENSA_DIS
+#pragma GCC poison CONFIG_MSP430_DIS
 
 #pragma GCC poison CONFIG_HAX
 #pragma GCC poison CONFIG_HVF

@@ -2,8 +2,8 @@
 #define _CPU_MSP430_H
 
 #include "qemu/osdep.h"
-#include "qemu-common.h"
-#include "qom/cpu.h"
+#include "qemu/bswap.h"
+#include "hw/core/cpu.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // Required Implementation for QEMU to Compile
@@ -11,22 +11,14 @@
 
 // REQUIRED: New Architecture needs this macro defined. No where is it specified that
 // this needs to be made. But it does. TCG Code related defines
-#define TARGET_LONG_BITS 32
-#define CPUArchState struct MSP430CpuState
+// #define CPUArchState struct MSP430CpuState
 #define TARGET_HAS_ICE 0
 
 #include "exec/cpu-defs.h"
 #include "fpu/softfloat.h"
 
-// REQUIRED: New Architecture needs this macro defined. No where is it specified that
-// this needs to be made. But it does. TCG Code related defines
-#define NB_MMU_MODES 1
-#define TARGET_PAGE_BITS 10     /* 1k */
-#define TARGET_PHYS_ADDR_SPACE_BITS 32
-#define TARGET_VIRT_ADDR_SPACE_BITS 32
-
 #define ENV_GET_CPU(e) CPU(msp430_env_get_cpu(e))
-#define ENV_OFFSET offsetof(MSP430Cpu, state)
+#define ENV_OFFSET offsetof(MSP430Cpu, env)
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -49,9 +41,11 @@
 // Misc QEMU Helper Defines that will help us get CPU class and CPU object
 // conversions
 #define TYPE_MSP430_CPU "msp430"
-#define MSP430_CPU_CLASS(klass)   OBJECT_CLASS_CHECK(MSP430Class, (klass), TYPE_MSP430_CPU)
-#define MSP430_CPU(obj)           OBJECT_CHECK(MSP430Cpu, (obj), TYPE_MSP430_CPU)
-#define MSP430_CPU_GET_CLASS(obj) OBJECT_GET_CLASS(MSP430Class, (obj), TYPE_MSP430_CPU)
+// #define MSP430_CPU_CLASS(klass)   OBJECT_CLASS_CHECK(MSP430Class, (klass), TYPE_MSP430_CPU)
+// #define MSP430_CPU(obj)           OBJECT_CHECK(MSP430Cpu, (obj), TYPE_MSP430_CPU)
+// #define MSP430_CPU_GET_CLASS(obj) OBJECT_GET_CLASS(MSP430Class, (obj), TYPE_MSP430_CPU)
+
+OBJECT_DECLARE_CPU_TYPE(MSP430Cpu, MSP430Class, MSP430_CPU)
 
 /**
  * Bitmask for each of the bits within this
@@ -137,9 +131,11 @@ typedef enum
     XOR, AND
 } msp430_opcode;
 
+typedef struct CPUArchState MSP430CpuState;
+
 // General State Control of the MSP430 Processor. Contains the state of the
 // registers and the IRQ lines that interrupt the CPU for control flow change.
-typedef struct MSP430CpuState {
+struct CPUArchState {
     // MSP430F5x Family has this many registers. This maybe consistent 
     // most of the 16bit 
     uint32_t regs[MSP430_NUM_REGISTERS];
@@ -149,34 +145,52 @@ typedef struct MSP430CpuState {
     // address.
     void *irqs[64];
 
-
-    CPU_COMMON
-} MSP430CpuState;
-
-// Definition of the MSP430 CPU structure that QEMU will use to define
-// the CPU and hold all the metadat about that CPU.
-typedef struct {
-    // <private>
-    CPUState qdev;
-
-    // <public>
-    MSP430CpuState state;
-} MSP430Cpu;
+};
 
 // Class Structure for the MSP430 CPU. Any particular extra functions
 // that maybe needed from this class can be implemented here.
-typedef struct {
+struct MSP430Class{
     /*< private >*/
-    CPUClass qdev;
+    CPUClass parent_class;
 
     /*< public >*/
     DeviceRealize parent_realize;
-    void (*parent_reset)(CPUState *cpu);
-} MSP430Class;
+    DeviceReset parent_reset;
+};
 
+
+// Definition of the MSP430 CPU structure that QEMU will use to define
+// the CPU and hold all the metadata about that CPU.
+// typedef struct {
+//     // <private>
+//     CPUState qdev;
+
+//     // <public>
+//     MSP430CpuState state;
+
+// } MSP430Cpu;
+
+/**
+ * MSP430CPU:
+ * @env: #CPUMSP430State
+ *
+ * A MSP430 CPU.
+*/
+struct ArchCPU {
+    /*< private >*/
+    CPUState parent_obj;
+    /*< public >*/
+
+    CPUNegativeOffsetState neg;
+    MSP430CpuState env;
+};
+
+#define MSP430_CPU_TYPE_SUFFIX "-" TYPE_MSP430_CPU
+#define MSP430_CPU_TYPE_NAME(model) model MSP430_CPU_TYPE_SUFFIX
+#define CPU_RESOLVING_TYPE TYPE_MSP430_CPU
 
 #include "exec/cpu-all.h"
-#include "exec/exec-all.h"
+// #include "exec/exec-all.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // Required Implementation for QEMU to Compile
@@ -201,8 +215,13 @@ void msp430_translate_init(void);
 //#define cpu_resume_from_signal   msp430_cpu_resume_from_signal
 //#define cpu_io_recompile         msp430_cpu_io_recompile
 
-//void tlb_fill(CPUState *cpu, target_ulong addr, int is_write, int mmu_idx,
-//              uintptr_t retaddr);
+bool msp430_tlb_fill(CPUState *cs, 
+                    vaddr addr,
+                    int size,
+                    MMUAccessType access_type, 
+                    int mmu_idx,
+                    bool probe,
+                    uintptr_t retaddr);
 
 // REQUIRED: QEMU Needs this function in order to survice and run as a CPU
 // object. Without this, it will compile and complain about implicit declaration.
@@ -216,9 +235,9 @@ static inline void cpu_get_tb_cpu_state(MSP430CpuState *state,
     *flags = 0;
 }
 
-static inline MSP430Cpu *msp430_env_get_cpu(MSP430CpuState *state)
+static inline MSP430Cpu *msp430_env_get_cpu(MSP430CpuState *env)
 {
-    return container_of(state, MSP430Cpu, state);
+    return container_of(env, MSP430Cpu, env);
 }
 
 static inline int cpu_mmu_index(MSP430CpuState *env, bool ifetch) {
@@ -227,7 +246,6 @@ static inline int cpu_mmu_index(MSP430CpuState *env, bool ifetch) {
 
 void msp430_cpu_dump_state(CPUState *cs, 
                           FILE *f, 
-                          fprintf_function cpu_fprintf,
                           int flags);
 
 //////////////////////////////////////////////////////////////////////////////////////////////

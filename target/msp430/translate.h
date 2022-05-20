@@ -1,6 +1,7 @@
 #ifndef __MSP430_TRANSLATE_H__
 #define __MSP430_TRANSLATE_H__
 
+#include "tcg/tcg.h"
 #include "exec/exec-all.h"
 #define MSP430_MAX_INSTR_WORDS   (4)
 
@@ -105,5 +106,6 @@ typedef struct
 } DisasmContext;
 
 
+void msp430_tcg_init(void);
 
 #endif

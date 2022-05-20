@@ -1,12 +1,13 @@
 #include "cpu.h"
-#include "tcg-op.h"
+#include "tcg/tcg-op.h"
 #include "exec/cpu_ldst.h"
 #include "translate.h"
-
+#include "qemu/qemu-print.h"
+#include "exec/translator.h"
+#include "exec/exec-all.h"
 
 /* Variable is needed in order for gen-icount.h to compile correctly and work. It relies on this
  * global variable in order to operate the start/end functions of gen_tb_(start/end)() */
-static TCGv_ptr cpu_env;
 #include "exec/gen-icount.h"
 
 /* Creating global TCG values that represent the register values and any other CPU registers 
@@ -37,22 +38,23 @@ static const char * reg_names[MSP430_NUM_REGISTERS] =
 // Helper Functions for the MSP430.
 //    These functions should be static, and possibly inline if appropriate
 // ===============================================================================================
+
+// (CPUState *cpu, FILE *, int flags)
 void msp430_cpu_dump_state(CPUState *cs, 
                           FILE *f, 
-                          fprintf_function cpu_fprintf,
                           int flags)
 {
     MSP430Cpu *cpu = MSP430_CPU(cs);
-    MSP430CpuState *env = &cpu->state;
+    MSP430CpuState *env = &cpu->env;
 
     int i;
-    cpu_fprintf(f, "========================================\n");
+    qemu_fprintf(f, "========================================\n");
     for (i = 0; i < 16; i += 4) {
-        cpu_fprintf(f, "$r%d=0x%04x $r%d=0x%04x $r%d=0x%04x $r%d=0x%04x\n",
+        qemu_fprintf(f, "$r%d=0x%04x $r%d=0x%04x $r%d=0x%04x $r%d=0x%04x\n",
                     i, env->regs[i], i+1, env->regs[i+1],
                     i+2, env->regs[i+2], i+3, env->regs[i+3]);
     }
-    cpu_fprintf(f, "\n");
+    qemu_fprintf(f, "\n");
 }
 
 /**
@@ -220,14 +222,14 @@ static inline void msp430_exit_tb(DisasmContext *ctx,
     {
         tcg_gen_goto_tb(idx);
         tcg_gen_movi_i32(TCGV_CPU_PC, targetAddr);
-        tcg_gen_exit_tb((uintptr_t)tb + idx);
+        tcg_gen_exit_tb(tb, idx);
     }
     else
     {
         tcg_gen_movi_i32(TCGV_CPU_PC, targetAddr);
         if(ctx->singlestep_enabled)
             msp430_raise_excp(MSP430_EXCP_DEBUG);
-        tcg_gen_exit_tb(0);
+        tcg_gen_exit_tb(tb, 0);
     }
 }
 
@@ -352,12 +354,14 @@ static void _msp430_operand_preamble(msp430_operand *op,
  * @param loadStoreOp [description]
  * @return [description]
  */
-#define msp430_operand_postamble(x, y)          _msp430_operand_postamble(x, y, true)
-#define msp430_operand_addr_postamble(x, y)     _msp430_operand_postamble(x, y, false)
-static int _msp430_operand_postamble(msp430_operand *op,
+#define msp430_operand_postamble(ctx, x, y)       _msp430_operand_postamble(ctx, x, y, true)
+#define msp430_operand_addr_postamble(ctx, x, y)  _msp430_operand_postamble(ctx, x, y, false)
+static int _msp430_operand_postamble(DisasmContext *ctx,
+                                    msp430_operand *op,
                                     msp430_access_size access,
                                     bool loadStoreOp)
 {
+    TranslationBlock *tb = ctx->tb;
     /* Switch based on the operand type the operand is currently set as. This will
      * help us find out what to do for the postamble. */
     switch(op->type)
@@ -385,7 +389,7 @@ static int _msp430_operand_postamble(msp430_operand *op,
             // Exit the TB.
             if(!(op->isSrcOp) && op->reg == MSP430_PC_REGISTER)
             {
-                tcg_gen_exit_tb(0);
+                tcg_gen_exit_tb(tb, 0);
                 return 1;
             }
             return 0;
@@ -626,6 +630,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
 {
     TCGv temp;
     uint16_t opcodeVal = 0;
+    TranslationBlock *tb = ctx->tb;
     msp430_access_size access = 0;
     msp430_format2 *fmt = &ctx->fmt.type2;
     msp430_opcode opcodeTable[] = { RRC, SWPB, RRA, SXT, 
@@ -658,7 +663,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
             msp430_clear_flag(STATUS_VFLAG);
             msp430_check_flags((CHECK_ZFLAG | CHECK_NFLAG | CHECK_CFLAG_NOTZ),
                                access, fmt->dest.tcgVal);
-            msp430_operand_postamble(&fmt->dest, access);
+            msp430_operand_postamble(ctx, &fmt->dest, access);
             break;
 
         case RRA:
@@ -683,7 +688,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
 
             // Free Registers
             tcg_temp_free_i32(temp);
-            msp430_operand_postamble(&fmt->dest, access);
+            msp430_operand_postamble(ctx, &fmt->dest, access);
 
             // TODO: Check status flags
             break;
@@ -720,7 +725,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
             // Free the allocated temporary values
             tcg_temp_free_i32(cflag);
             tcg_temp_free_i32(temp);
-            msp430_operand_postamble(&fmt->dest, access);
+            msp430_operand_postamble(ctx, &fmt->dest, access);
 
             // TODO: Check status flags
             break;
@@ -730,8 +735,8 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
             // then there is an invalid decoding of the instruction.
             msp430_error((fmt->bw == 1), "MSP430 Translate: Invalid SWP instruction..\n");
             msp430_operand_preamble(&fmt->dest, access);
-            tcg_gen_bswap16_i32(fmt->dest.tcgVal, fmt->dest.tcgVal);
-            msp430_operand_postamble(&fmt->dest, access);
+            tcg_gen_bswap16_i32(fmt->dest.tcgVal, fmt->dest.tcgVal, TCG_BSWAP_IZ); // TODO: ???
+            msp430_operand_postamble(ctx, &fmt->dest, access);
             break;
 
         case CALL:
@@ -757,12 +762,13 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
             // Update the PC counter with the value stored in tcgVal. This will
             // hold the address of where to jump to.
             tcg_gen_mov_i32(TCGV_REG(MSP430_PC_REGISTER), fmt->dest.tcgVal);
-            msp430_operand_addr_postamble(&fmt->dest, access);
+            msp430_operand_addr_postamble(ctx, &fmt->dest, access);
             
             // Then the translation block since we called into a subroutine which
             // modified the PC register.
-            tcg_gen_exit_tb(0);
+            tcg_gen_exit_tb(tb, 0);
             ctx->state = STATE_END;
+            break;
 
         case PUSH:
             // TODO: Fix Reference Issue
@@ -774,7 +780,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
                 tcg_gen_qemu_st16(fmt->dest.tcgVal, TCGV_REG(MSP430_SP_REGISTER), 0);
             else
                 tcg_gen_qemu_st8(fmt->dest.tcgVal, TCGV_REG(MSP430_SP_REGISTER), 0);
-            msp430_operand_postamble(&fmt->dest, access);
+            msp430_operand_postamble(ctx, &fmt->dest, access);
             break;
 
         case RETI:
@@ -798,7 +804,7 @@ static void msp430_translate_format2(MSP430CpuState *env, DisasmContext *ctx)
             
             // Mark as an end to the translation block. This allows us
             // break out and jump to another TranslationBlock.
-            tcg_gen_exit_tb(0);
+            tcg_gen_exit_tb(tb, 0);
             tcg_temp_free_i32(temp);
             ctx->state = STATE_END;
             break;
@@ -1028,8 +1034,8 @@ static void msp430_translate_format1(MSP430CpuState *env, DisasmContext *ctx)
     // So far, no Format I instruction is by definition a regular CF
     // instruction  (Call/Jump). Emulated instructions (Ret) emulate CF 
     // with Format1 instructions
-    msp430_operand_postamble(&fmt->src, access);
-    if(msp430_operand_postamble(&fmt->dest, access))
+    msp430_operand_postamble(ctx, &fmt->src, access);
+    if(msp430_operand_postamble(ctx, &fmt->dest, access))
         ctx->state = STATE_END;
 
     return;
@@ -1286,13 +1292,13 @@ static void msp430_generate_tcg_code(MSP430CpuState *env, TranslationBlock *tb, 
  * - Initialize TCG variables (TCGv) to map to the related member within the CPU state so the TCG
  * engine knows where to store/fetch data from
  */
-void msp430_translate_init(void)
+void msp430_tcg_init(void)
 {
     int i;
 
     /* Need to initialize the cpu_env variable in order for the gen_tb_ functions
      * to work properly. */
-    cpu_env = tcg_global_reg_new_ptr(TCG_AREG0, "env");
+    // cpu_env = tcg_global_mem_new_ptr(TCG_AREG0, "env");
 
     /* Initialize the TCG variables that will be used when generating new TCG instructions
      * for the MSP430. This will help us generate instructions quicker and faster. */
@@ -1302,7 +1308,14 @@ void msp430_translate_init(void)
                                              reg_names[i]);
 }
 
-
+// static const TranslatorOps msp430_tr_ops = {
+//     .init_disas_context = msp430_tr_init_disas_context,
+//     .tb_start           = msp430_tr_tb_start,
+//     .insn_start         = msp430_tr_insn_start,
+//     .translate_insn     = msp430_tr_translate_insn,
+//     .tb_stop            = msp430_tr_tb_stop,
+//     .disas_log          = msp430_tr_disas_log,
+// };
 // ===============================================================================================
 // Required Functions for a Translation Engine for a CPU (MSP430).
 //    These functions are called by QEMU during execution. These functions have to be 
@@ -1315,8 +1328,12 @@ void msp430_translate_init(void)
  * @param env [description]
  * @param TranslationBlock [description]
  */
-void gen_intermediate_code(MSP430CpuState *env, struct TranslationBlock *tb) 
+void gen_intermediate_code(CPUState *cs, struct TranslationBlock *tb, int max_insns) 
 {
+    // DisasContext dc = {};
+    MSP430Cpu *cpu = MSP430_CPU(cs);
+    MSP430CpuState *env = &cpu->env;
+
     msp430_generate_tcg_code(env, tb, false);
 }
 
