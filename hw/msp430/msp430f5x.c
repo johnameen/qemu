@@ -59,7 +59,7 @@ static void msp430f5x_machine_init(MachineClass *mc)
 {
     mc->desc = "MSP430F5x Family Suite";
     mc->init = msp430f5x_init;
-    mc->is_default = 1;
+    mc->is_default = 0;
 }
 
 DEFINE_MACHINE("msp430f5x", msp430f5x_machine_init)
