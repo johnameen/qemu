@@ -45,7 +45,7 @@ static void msp430f5x_init(MachineState *args)
         exit(1);
     }
 
-    memory_region_init_ram(sram, NULL, "msp430.ram", MSP430_RAM_SIZE, NULL);
+    memory_region_init_ram_nomigrate(sram, NULL, "msp430.ram", MSP430_RAM_SIZE, NULL);
     vmstate_register_ram_global(sram);
     memory_region_add_subregion(toplevel, 0x400, sram);
 
